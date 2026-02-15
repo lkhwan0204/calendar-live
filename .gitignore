@@ -1,0 +1,17 @@
+.DS_Store
+.derivedData/
+DerivedData/
+
+# Xcode user/state
+*.xcuserstate
+*.xcscmblueprint
+xcuserdata/
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+
+# SwiftPM
+.build/
+.swiftpm/
+
+# Logs
+*.log
