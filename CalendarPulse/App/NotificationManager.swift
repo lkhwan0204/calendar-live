@@ -10,7 +10,7 @@ final class NotificationManager {
         try await center.requestAuthorization(options: [.alert, .sound, .badge])
     }
 
-    func scheduleReminders(for event: CalendarEvent, minutesBefore: Int = 120) async {
+    func scheduleReminders(for event: CalendarEvent, minutesBefore: Int = 30) async {
         let safeID = sanitizedIdentifier(event.id)
         let beforeID = "\(identifierPrefix)\(safeID).before"
         let startID = "\(identifierPrefix)\(safeID).start"
@@ -26,15 +26,6 @@ final class NotificationManager {
                 title: "곧 일정 시작",
                 body: "\(event.title) 일정이 \(minutesBefore)분 뒤 시작됩니다.",
                 date: beforeDate
-            )
-        }
-
-        if event.startDate > now {
-            await addRequest(
-                id: startID,
-                title: "일정 시작",
-                body: "\(event.title) 일정이 지금 시작되었습니다.",
-                date: event.startDate
             )
         }
     }

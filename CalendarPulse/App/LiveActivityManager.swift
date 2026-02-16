@@ -48,7 +48,12 @@ final class LiveActivityManager {
 
             if let existing = keptActivityByEventID[event.id] {
                 if existing.contentState != state {
-                    await existing.update(using: state)
+                    if #available(iOS 16.2, *) {
+                        let content = ActivityContent(state: state, staleDate: event.startDate)
+                        await existing.update(content)
+                    } else {
+                        await existing.update(using: state)
+                    }
                 }
                 continue
             }
@@ -57,7 +62,7 @@ final class LiveActivityManager {
                 if #available(iOS 16.2, *) {
                     _ = try Activity.request(
                         attributes: CalendarActivityAttributes(eventID: event.id),
-                        content: .init(state: state, staleDate: event.endDate),
+                        content: .init(state: state, staleDate: event.startDate),
                         pushType: nil
                     )
                 } else {

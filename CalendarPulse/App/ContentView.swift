@@ -113,7 +113,7 @@ struct ContentView: View {
                                 }
                             }
                         } else {
-                            Text("앞으로 30일 중요 일정")
+                            Text("앞으로 7일 중요 일정")
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
 

@@ -30,6 +30,9 @@ final class CalendarViewModel: ObservableObject {
     private var refreshTick = 0
     private var lastReminderEventID: String?
     private var lastReminderStartDate: Date?
+    private var lastReminderMinutesBefore: Int?
+    private var liveActivityBoundaryTask: Task<Void, Never>?
+    private var liveActivityBoundaryDate: Date?
     private var eventStoreChangedObserver: NSObjectProtocol?
     private var lastEventStoreRefreshAt: Date = .distantPast
 
@@ -86,29 +89,41 @@ final class CalendarViewModel: ObservableObject {
         let activityCandidates = calendarManager.fetchEventsForLiveActivity(withinHours: 24)
             .filter { event in
                 let secondsUntilStart = event.startDate.timeIntervalSince(now)
-                let secondsUntilEnd = event.endDate.timeIntervalSince(now)
                 let liveActivityStartSeconds = isImportant(event) ? 10800.0 : 3600.0
-                return secondsUntilStart <= liveActivityStartSeconds && secondsUntilEnd > 0
+                return secondsUntilStart > 0 && secondsUntilStart <= liveActivityStartSeconds
             }
 
         Task {
             if activityCandidates.isEmpty {
                 await liveActivityManager.endActivity()
+                scheduleLiveActivityBoundaryRefresh(at: nil)
             } else {
                 await liveActivityManager.syncActivities(with: activityCandidates)
+                let nextBoundary = activityCandidates
+                    .map(\.startDate)
+                    .filter { $0.timeIntervalSinceNow > 0 }
+                    .min()
+                scheduleLiveActivityBoundaryRefresh(at: nextBoundary)
             }
 
             if let next {
-                let shouldRescheduleReminder = next.id != lastReminderEventID || next.startDate != lastReminderStartDate
+                let minutesBefore = isImportant(next) ? 90 : 30
+                let shouldRescheduleReminder =
+                    next.id != lastReminderEventID ||
+                    next.startDate != lastReminderStartDate ||
+                    minutesBefore != lastReminderMinutesBefore
                 if shouldRescheduleReminder {
-                    await notificationManager.scheduleReminders(for: next, minutesBefore: 120)
+                    await notificationManager.clearAllEventReminders()
+                    await notificationManager.scheduleReminders(for: next, minutesBefore: minutesBefore)
                     lastReminderEventID = next.id
                     lastReminderStartDate = next.startDate
+                    lastReminderMinutesBefore = minutesBefore
                 }
             } else {
                 await notificationManager.clearAllEventReminders()
                 lastReminderEventID = nil
                 lastReminderStartDate = nil
+                lastReminderMinutesBefore = nil
             }
         }
     }
@@ -284,7 +299,7 @@ final class CalendarViewModel: ObservableObject {
             importantUpcomingEvents = []
             return
         }
-        importantUpcomingEvents = calendarManager.fetchUpcomingEvents(withinDays: 30)
+        importantUpcomingEvents = calendarManager.fetchUpcomingEvents(withinDays: 7)
             .filter { isImportant($0) }
     }
 
@@ -363,5 +378,33 @@ final class CalendarViewModel: ObservableObject {
         refreshSelectedDateEvents()
         refreshImportantUpcomingEvents()
         refreshEventDateComponents()
+    }
+
+    private func scheduleLiveActivityBoundaryRefresh(at date: Date?) {
+        if date == nil {
+            liveActivityBoundaryTask?.cancel()
+            liveActivityBoundaryTask = nil
+            liveActivityBoundaryDate = nil
+            return
+        }
+
+        guard let date else { return }
+
+        if let liveActivityBoundaryDate,
+           abs(liveActivityBoundaryDate.timeIntervalSince(date)) < 1 {
+            return
+        }
+
+        liveActivityBoundaryTask?.cancel()
+        liveActivityBoundaryDate = date
+
+        liveActivityBoundaryTask = Task { [weak self] in
+            let wait = max(date.timeIntervalSinceNow + 0.2, 0.1)
+            try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                self?.refreshNextEventAndLiveActivity()
+            }
+        }
     }
 }
